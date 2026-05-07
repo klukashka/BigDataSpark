@@ -22,7 +22,10 @@ def ch_url() -> str:
     :return: JDBC URL for ClickHouse.
     """
     db = os.environ.get("CLICKHOUSE_DB", "analytics")
-    return f"jdbc:clickhouse://clickhouse:8123/{db}"
+    user = os.environ.get("CLICKHOUSE_USER", "default")
+    password = os.environ.get("CLICKHOUSE_PASSWORD", "")
+    # Explicit credentials avoid driver-dependent defaults (e.g. treating empty password as null)
+    return f"jdbc:clickhouse://clickhouse:8123/{db}?user={user}&password={password}"
 
 
 def create_clickhouse_tables(spark: SparkSession) -> None:
@@ -34,7 +37,12 @@ def create_clickhouse_tables(spark: SparkSession) -> None:
     :param spark: Active Spark session (used to access JVM).
     """
     jvm = spark._sc._gateway.jvm  # type: ignore[attr-defined]
-    conn = jvm.java.sql.DriverManager.getConnection(ch_url())
+    # Ensure JDBC driver is loaded in the JVM
+    jvm.java.lang.Class.forName("com.clickhouse.jdbc.ClickHouseDriver")
+    props = jvm.java.util.Properties()
+    props.setProperty("user", os.environ.get("CLICKHOUSE_USER", "default"))
+    props.setProperty("password", os.environ.get("CLICKHOUSE_PASSWORD", ""))
+    conn = jvm.java.sql.DriverManager.getConnection(ch_url(), props)
     stmt = conn.createStatement()
     try:
         # 1) Products mart
@@ -134,13 +142,13 @@ def create_clickhouse_tables(spark: SparkSession) -> None:
         conn.close()
 
 
-def write_to_clickhouse(df, table: str, mode: str = "overwrite") -> None:
+def write_to_clickhouse(df, table: str, mode: str = "append") -> None:
     """
     Write dataframe to ClickHouse via JDBC.
 
     :param df: Spark DataFrame to write.
     :param table: Target ClickHouse table name.
-    :param mode: Spark write mode (default: overwrite).
+    :param mode: Spark write mode (default: append).
     """
     (
         df.write.format("jdbc")
@@ -150,6 +158,26 @@ def write_to_clickhouse(df, table: str, mode: str = "overwrite") -> None:
         .option("driver", "com.clickhouse.jdbc.ClickHouseDriver")
         .save()
     )
+
+
+def truncate_clickhouse_table(spark: SparkSession, table: str) -> None:
+    """
+    Truncate ClickHouse table via JDBC.
+
+    :param spark: Active Spark session (used to access JVM).
+    :param table: Table name to truncate.
+    """
+    jvm = spark._sc._gateway.jvm  # type: ignore[attr-defined]
+    props = jvm.java.util.Properties()
+    props.setProperty("user", os.environ.get("CLICKHOUSE_USER", "default"))
+    props.setProperty("password", os.environ.get("CLICKHOUSE_PASSWORD", ""))
+    conn = jvm.java.sql.DriverManager.getConnection(ch_url(), props)
+    stmt = conn.createStatement()
+    try:
+        stmt.execute(f"TRUNCATE TABLE IF EXISTS {table}")
+    finally:
+        stmt.close()
+        conn.close()
 
 
 def main() -> None:
@@ -164,11 +192,21 @@ def main() -> None:
 
     spark = (
         SparkSession.builder.appName("reports_to_clickhouse")
+        .master("local[*]")
         .config("spark.sql.session.timeZone", "UTC")
         .getOrCreate()
     )
 
     create_clickhouse_tables(spark)
+    for t in [
+        "mart_sales_by_products",
+        "mart_sales_by_customers",
+        "mart_sales_by_time",
+        "mart_sales_by_stores",
+        "mart_sales_by_suppliers",
+        "mart_product_quality",
+    ]:
+        truncate_clickhouse_table(spark, t)
 
     fact = (
         spark.read.format("jdbc")
@@ -253,6 +291,7 @@ def main() -> None:
             "reviews_cnt",
         ),
         "mart_sales_by_products",
+        mode="append",
     )
 
     # 2) Sales by customers
@@ -279,6 +318,7 @@ def main() -> None:
             "avg_check",
         ),
         "mart_sales_by_customers",
+        mode="append",
     )
 
     # 3) Sales by time (month)
@@ -300,6 +340,7 @@ def main() -> None:
             "avg_order_size",
         ),
         "mart_sales_by_time",
+        mode="append",
     )
 
     # 4) Sales by stores
@@ -328,6 +369,7 @@ def main() -> None:
             "avg_check",
         ),
         "mart_sales_by_stores",
+        mode="append",
     )
 
     # 5) Sales by suppliers
@@ -355,6 +397,7 @@ def main() -> None:
             "orders_cnt",
         ),
         "mart_sales_by_suppliers",
+        mode="append",
     )
 
     # 6) Product quality mart
@@ -383,6 +426,7 @@ def main() -> None:
             "revenue",
         ),
         "mart_product_quality",
+        mode="append",
     )
 
     spark.stop()

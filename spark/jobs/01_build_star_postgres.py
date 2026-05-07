@@ -25,6 +25,7 @@ def main() -> None:
 
     spark = (
         SparkSession.builder.appName("build_star_postgres")
+        .master("local[*]")
         .config("spark.sql.session.timeZone", "UTC")
         .getOrCreate()
     )

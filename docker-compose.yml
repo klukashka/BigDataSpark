@@ -26,6 +26,8 @@ services:
       - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
     environment:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
     volumes:
       - chdata:/var/lib/clickhouse
       - ./sql/clickhouse:/docker-entrypoint-initdb.d:ro
@@ -44,17 +46,14 @@ services:
       context: ./spark
       dockerfile: Dockerfile
     container_name: bigdata-spark-spark
+    command: ["bash", "-lc", "sleep infinity"]
     environment:
-      SPARK_MODE: master
-      SPARK_MASTER_PORT: ${SPARK_MASTER_PORT:-7077}
-      SPARK_UI_PORT: ${SPARK_UI_PORT:-8080}
       POSTGRES_DB: ${POSTGRES_DB:-bigdata_spark}
       POSTGRES_USER: ${POSTGRES_USER:-bigdata}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bigdata}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
-    ports:
-      - "${SPARK_UI_PORT:-8080}:8080"
-      - "${SPARK_MASTER_PORT:-7077}:7077"
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
     volumes:
       - ./spark/jobs:/opt/spark/jobs:ro
     depends_on:

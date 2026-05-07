@@ -35,8 +35,8 @@ docker compose up -d --build
 Запуск Spark-джоб:
 
 ```bash
-docker exec -it bigdata-spark-spark spark-submit /opt/spark/jobs/01_build_star_postgres.py
-docker exec -it bigdata-spark-spark spark-submit /opt/spark/jobs/02_reports_to_clickhouse.py
+docker exec -it bigdata-spark-spark /opt/spark/bin/spark-submit /opt/spark/jobs/01_build_star_postgres.py
+docker exec -it bigdata-spark-spark /opt/spark/bin/spark-submit /opt/spark/jobs/02_reports_to_clickhouse.py
 ```
 
 ---
@@ -57,7 +57,7 @@ SELECT COUNT(*) FROM dw.fact_sales;    -- 10000
 ClickHouse (6 витрин):
 
 ```bash
-docker exec -it bigdata-spark-clickhouse clickhouse-client --query "SHOW TABLES FROM analytics"
+docker exec -it bigdata-spark-clickhouse clickhouse-client --user bigdata --password bigdata --query "SHOW TABLES FROM analytics"
 ```
 
 Ожидаемые таблицы витрин:
